@@ -1,0 +1,57 @@
+import requests
+from datetime import datetime
+
+def format_date(date_str):
+    """Try to parse different date formats and return a standardized date string."""
+    for fmt in ("%Y/%m/%d", "%Y年%m月%d日", "%Y年%m月", "%Y年"):
+        try:
+            return datetime.strptime(date_str, fmt).strftime("%Y/%m/%d")
+        except ValueError:
+            continue
+    return date_str  # Return the original string if no format matches
+
+def fetch_pubmed_data(journal=None, pdat=None, volume=None, issue=None, authors=None, author_position="auto"):
+    base_url = "https://pubmed.ncbi.nlm.nih.gov/api/citmatch/"
+    method = "field"
+    if pdat:
+        pdat = format_date(pdat)
+
+    params = {
+        "method": method,
+        "journal": journal.replace(" ", "%20") if journal else None,
+        "pdat": pdat,
+        "volume": volume,
+        "issue": issue,
+        "authors": authors.replace(" ", "+") if authors else None,
+        "author_position": author_position
+    }
+
+    # Construct the query string
+    query_string = "&".join([f"{key}={value}" for key, value in params.items() if value])
+    # Complete URL
+    url = f"{base_url}?{query_string}"
+
+    print(f"URL: {url}")  # Debug output
+
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error: {response.status_code}")  # Debug output
+        print(response.text)  # Debug output
+        return {"error": f"Failed to fetch data, status code: {response.status_code}", "details": response.text}
+
+def main():
+    print("PubMed Search")
+    journal = input("Enter journal name (or leave blank): ")
+    pdat = input("Enter publication date (YYYY/MM/DD, YYYY年MM月DD日, etc., or leave blank): ")
+    volume = input("Enter volume (or leave blank): ")
+    issue = input("Enter issue (or leave blank): ")
+    authors = input("Enter authors (format: Surname Initial, or leave blank): ")
+    author_position = input("Enter author position (first, last, auto; default is auto): ") or "auto"
+
+    result = fetch_pubmed_data(journal, pdat, volume, issue, authors, author_position)
+    print(result)
+
+if __name__ == "__main__":
+    main()
