@@ -1,0 +1,37 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+import time
+
+# Chromeのオプションを設定
+chrome_options = Options()
+chrome_options.add_argument("--start-maximized")
+
+# WebDriverのセットアップ（手動ダウンロードしたDriverを使用）
+driver_path = 'C:/Users/yukik/Desktop/chromedriver.exe'
+driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
+
+try:
+    # 指定されたURLにアクセス
+    driver.get('https://www.ncbi.nlm.nih.gov/')
+
+    # ページが完全に読み込まれるまで待機（必要に応じて調整）
+    time.sleep(2)
+
+    # フォームの要素を特定
+    search_box = driver.find_element(By.XPATH, '//*[@id="searchform"]/div/div/div/div/input')  # inputタグを追加
+
+    # フォームに「1」を入力
+    search_box.send_keys('skin')
+
+    # フォームの送信
+    search_box.send_keys(Keys.RETURN)
+
+    # 結果を確認するために少し待機
+    time.sleep(5)
+
+finally:
+    # ブラウザを閉じる
+    driver.quit()
