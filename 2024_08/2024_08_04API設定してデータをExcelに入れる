@@ -1,0 +1,117 @@
+import requests
+import os
+import pandas as pd
+from datetime import datetime
+from xml.etree import ElementTree as ET
+
+def format_date(date_str):
+    """Try to parse different date formats and return a standardized date string."""
+    for fmt in ("%Y/%m/%d", "%Y年%m月%d日", "%Y年%m月", "%Y年"):
+        try:
+            return datetime.strptime(date_str, fmt).strftime("%Y/%m/%d")
+        except ValueError:
+            continue
+    return date_str  # Return the original string if no format matches
+
+def fetch_pubmed_data(journal=None, pdat=None, volume=None, issue=None, authors=None):
+    base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    db = "pubmed"
+    retmode = "json"
+
+    params = {
+        "db": db,
+        "retmode": retmode,
+        "term": f"{journal}[journal]" if journal else None,
+        "mindate": pdat,
+        "maxdate": pdat,
+        "volume": volume,
+        "issue": issue,
+        "author": authors
+    }
+
+    # Filter out empty parameters and construct the query string
+    filtered_params = {key: value for key, value in params.items() if value}
+    response = requests.get(base_url, params=filtered_params)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error: {response.status_code}")  # Debug output
+        print(response.text)  # Debug output
+        return {"error": f"Failed to fetch data, status code: {response.status_code}", "details": response.text}
+
+def fetch_article_details(uid):
+    """Fetch article details from PubMed given a UID."""
+    base_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    db = "pubmed"
+    retmode = "xml"
+
+    params = {
+        "db": db,
+        "retmode": retmode,
+        "id": uid
+    }
+
+    response = requests.get(base_url, params=params)
+    if response.status_code == 200:
+        return response.text  # For simplicity, return the XML content
+    else:
+        print(f"Error fetching article {uid}: {response.status_code}")
+        return None
+
+def parse_article_details(xml_data):
+    """Parse the XML data to extract relevant article details."""
+    root = ET.fromstring(xml_data)
+    title = root.findtext(".//ArticleTitle")
+    link = f"https://pubmed.ncbi.nlm.nih.gov/{root.findtext('.//ArticleId[@IdType=\"pubmed\"]')}/"
+    
+    return title, link
+
+def main():
+    print("PubMed Search")
+    journal = input("Enter journal name (or leave blank): ")
+    pdat = input("Enter publication date (YYYY/MM/DD, YYYY年MM月DD日, etc., or leave blank): ")
+    volume = input("Enter volume (or leave blank): ")
+    issue = input("Enter issue (or leave blank): ")
+    authors = input("Enter authors (format: Surname Initial, or leave blank): ")
+
+    # Ensure at least one parameter is provided
+    if not (journal or pdat or volume or issue or authors):
+        print("Error: At least one search parameter must be provided.")
+        return
+
+    result = fetch_pubmed_data(journal, pdat, volume, issue, authors)
+    
+    if "error" in result:
+        print(result)
+        return
+    
+    titles = []
+    links = []
+    if "esearchresult" in result and "idlist" in result["esearchresult"]:
+        for uid in result["esearchresult"]["idlist"]:
+            details = fetch_article_details(uid)
+            if details:
+                title, link = parse_article_details(details)
+                titles.append(title)
+                links.append(link)
+    
+    # 解析したデータを辞書に保存
+    data = {
+        'Title': titles,
+        'Link': links
+    }
+
+    # データフレームを作成
+    df = pd.DataFrame(data)
+
+    # 出力ファイルパスをユーザーのドキュメントフォルダに設定
+    output_directory = os.path.join(os.path.expanduser('~'), 'Documents')
+    output_file_path = os.path.join(output_directory, 'ncbi_result_info.xlsx')
+
+    # データフレームをExcelファイルに書き出す
+    df.to_excel(output_file_path, index=False, engine='openpyxl')
+
+    print(f"Excelファイル '{output_file_path}' に保存されたよ！")
+
+if __name__ == "__main__":
+    main()
