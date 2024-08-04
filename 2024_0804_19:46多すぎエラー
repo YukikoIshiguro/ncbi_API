@@ -1,0 +1,32 @@
+import requests
+
+def generate_citmatch_link(journal, volume, page):
+    base_url = "https://pubmed.ncbi.nlm.nih.gov/api/citmatch/?method=field"
+    link = f"{base_url}&journal={journal}&volume={volume}&page={page}"
+    return link
+
+def fetch_pubmed_data(link):
+    response = requests.get(link)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error: {response.status_code}")
+        print(response.text)
+        return {"error": f"Failed to fetch data, status code: {response.status_code}", "details": response.text}
+
+def main():
+    # ターミナルからの入力を受け付ける
+    journal = input("Enter journal name: ")
+    volume = input("Enter volume: ")
+    page = input("Enter page number: ")
+
+    # リンクの文字列を生成
+    citmatch_link = generate_citmatch_link(journal, volume, page)
+    print(f"Generated link: {citmatch_link}")
+
+    # PubMedデータを取得
+    result = fetch_pubmed_data(citmatch_link)
+    print(f"Response: {result}")
+
+if __name__ == "__main__":
+    main()
