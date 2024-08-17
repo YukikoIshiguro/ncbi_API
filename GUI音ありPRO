@@ -1,0 +1,161 @@
+import requests
+import os
+import pandas as pd
+from datetime import datetime
+from xml.etree import ElementTree as ET
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import filedialog
+import pygame
+
+# スクリプトファイルと同じディレクトリ内の音声ファイルへの相対パス
+AUDIO_FILE_PATH = os.path.join(os.path.dirname(__file__), 'キラッ1.mp3')
+
+# Pygame初期化
+pygame.mixer.init()
+
+def format_date(date_str):
+    for fmt in ("%Y/%m/%d", "%Y年%m月%d日", "%Y年%m月", "%Y年"):
+        try:
+            return datetime.strptime(date_str, fmt).strftime("%Y/%m/%d")
+        except ValueError:
+            continue
+    return date_str
+
+def fetch_pubmed_data(journal=None, pdat=None, volume=None, issue=None, authors=None):
+    base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    db = "pubmed"
+    retmode = "json"
+
+    params = {
+        "db": db,
+        "retmode": retmode,
+        "term": f"{journal}[journal]" if journal else None,
+        "mindate": pdat,
+        "maxdate": pdat,
+        "volume": volume,
+        "issue": issue,
+        "author": authors
+    }
+
+    filtered_params = {key: value for key, value in params.items() if value}
+    response = requests.get(base_url, params=filtered_params)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return {"error": f"Failed to fetch data, status code: {response.status_code}", "details": response.text}
+
+def fetch_article_details(uid):
+    base_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    db = "pubmed"
+    retmode = "xml"
+
+    params = {
+        "db": db,
+        "retmode": retmode,
+        "id": uid
+    }
+
+    response = requests.get(base_url, params=params)
+    if response.status_code == 200:
+        return response.text
+    else:
+        return None
+
+def parse_article_details(xml_data):
+    root = ET.fromstring(xml_data)
+    title = root.findtext(".//ArticleTitle")
+    term = title.replace(" ", "%20")  # スペースを%20に置き換え
+    link = f"https://pubmed.ncbi.nlm.nih.gov/?term={term}"
+    
+    return title, link
+
+def fetch_citmatch_data(journal, volume, page):
+    url = f"https://pubmed.ncbi.nlm.nih.gov/api/citmatch/?method=field&journal={journal}&volume={volume}&page={page}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        return {"error": f"Failed to fetch data, status code: {response.status_code}", "details": response.text}
+
+def play_sound():
+    pygame.mixer.music.load(AUDIO_FILE_PATH)
+    pygame.mixer.music.play()
+
+def run_search():
+    journal = journal_entry.get()
+    pdat = pdat_entry.get()
+    volume = volume_entry.get()
+    issue = issue_entry.get()
+    authors = authors_entry.get()
+
+    if not (journal or pdat or volume or issue or authors):
+        messagebox.showerror("Error", "At least one search parameter must be provided.")
+        return
+
+    result = fetch_pubmed_data(journal, pdat, volume, issue, authors)
+    
+    if "error" in result:
+        messagebox.showerror("Error", result["error"])
+        return
+
+    titles = []
+    links = []
+    if "esearchresult" in result and "idlist" in result["esearchresult"]:
+        for uid in result["esearchresult"]["idlist"]:
+            details = fetch_article_details(uid)
+            if details:
+                title, link = parse_article_details(details)
+                titles.append(title)
+                links.append(link)
+    
+    citmatch_result = fetch_citmatch_data("Front Immunol", "13", "826091")
+    if "result" in citmatch_result and "uids" in citmatch_result["result"]:
+        for item in citmatch_result["result"]["uids"]:
+            uid = item["pubmed"]
+            details = fetch_article_details(uid)
+            if details:
+                title, link = parse_article_details(details)
+                titles.append(title)
+                links.append(link)
+    
+    data = {
+        'Title': titles,
+        'Link': links
+    }
+
+    df = pd.DataFrame(data)
+
+    output_file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
+    if output_file_path:
+        df.to_excel(output_file_path, index=False, engine='openpyxl')
+        messagebox.showinfo("Success", f"Excel file '{output_file_path}' has been saved!")
+        play_sound()  # 音声を再生
+
+# GUI Setup
+root = tk.Tk()
+root.title("PubMed Search")
+
+tk.Label(root, text="Journal Name:").grid(row=0, column=0, padx=10, pady=5)
+journal_entry = tk.Entry(root)
+journal_entry.grid(row=0, column=1, padx=10, pady=5)
+
+tk.Label(root, text="Publication Date (YYYY/MM/DD or other formats):").grid(row=1, column=0, padx=10, pady=5)
+pdat_entry = tk.Entry(root)
+pdat_entry.grid(row=1, column=1, padx=10, pady=5)
+
+tk.Label(root, text="Volume:").grid(row=2, column=0, padx=10, pady=5)
+volume_entry = tk.Entry(root)
+volume_entry.grid(row=2, column=1, padx=10, pady=5)
+
+tk.Label(root, text="Issue:").grid(row=3, column=0, padx=10, pady=5)
+issue_entry = tk.Entry(root)
+issue_entry.grid(row=3, column=1, padx=10, pady=5)
+
+tk.Label(root, text="Authors (format: Surname Initial):").grid(row=4, column=0, padx=10, pady=5)
+authors_entry = tk.Entry(root)
+authors_entry.grid(row=4, column=1, padx=10, pady=5)
+
+tk.Button(root, text="Search", command=run_search).grid(row=5, column=0, columnspan=2, pady=10)
+
+root.mainloop()
